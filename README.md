@@ -28,14 +28,15 @@ Maximize Sharpe Ratio:
 
  (portfolio return − risk-free rate) / portfolio volatility
  Subject to:
+           Fully invested: ∑w=1
+           Long-only constraint
+           Max position size = 20% per asset
 
-Fully invested: ∑w=1
-Long-only constraint
-Max position size = 20% per asset
 Backtesting
 Applies optimal weights to historical returns (2015–2023)
 Benchmarked against SPY
 Evaluates cumulative performance
+
 📈 Results
 Portfolio vs Benchmark
 Optimized portfolio significantly outperforms SPY over the sample period
