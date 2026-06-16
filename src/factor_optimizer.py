@@ -121,6 +121,9 @@ def optimize_portfolio(
 ):
     """
     Maximize Sharpe ratio or minimize CVaR for optimal portfolio allocation.
+
+    Returns:
+        (weights, objective_used): objective_used is 'cvar', 'sharpe', or 'sharpe_fallback'.
     """
     n = len(expected_returns)
     expected_returns = np.asarray(expected_returns, dtype=float)
@@ -155,9 +158,11 @@ def optimize_portfolio(
                 prev_weights=prev_arr,
                 max_turnover=max_turnover,
             )
-            return weights
+            return weights, "cvar"
         except Exception as e:
             logger.warning(f"CVaR LP failed ({e}); falling back to Sharpe.")
+
+    used_sharpe_fallback = optimization_objective == "cvar"
 
     def negative_sharpe(weights):
         portfolio_return = weights @ expected_returns
@@ -201,4 +206,5 @@ def optimize_portfolio(
         raise ValueError("Portfolio optimization returned non-finite weights.")
 
     logger.info(f"✓ Optimization converged | Sharpe: {-result.fun:.3f}")
-    return result.x
+    objective_used = "sharpe_fallback" if used_sharpe_fallback else "sharpe"
+    return result.x, objective_used

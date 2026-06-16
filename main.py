@@ -86,15 +86,14 @@ def _select_period_universe(
     max_names: int = 50,
     min_coverage: float = 0.95,
 ) -> list[str]:
-    """Filter by data coverage; keep top names by lowest training vol (size proxy)."""
+    """Filter by data coverage; keep top names by highest training-window coverage."""
     available = _tickers_in_panel(universe_tickers, train_daily.columns)
     sub = train_daily[available]
     coverage = sub.notna().mean()
     valid = coverage[coverage >= min_coverage].index.tolist()
-    sub = sub[valid]
     if len(valid) <= max_names:
         return valid
-    return sub.std().nsmallest(max_names).index.tolist()
+    return coverage.loc[valid].nlargest(max_names).index.tolist()
 
 
 def _align_weights_to_tickers(
@@ -111,7 +110,8 @@ def _compute_drifted_weights(
 ) -> np.ndarray:
     """Drift prior target weights over the completed OOS window."""
     cum = (1 + prev_oos_daily.fillna(0)).prod()
-    drifted = prev_weights * cum.values
+    aligned_cum = cum.reindex(prev_tickers).fillna(1.0).values
+    drifted = prev_weights * aligned_cum
     if drifted.sum() > 1e-12:
         return drifted / drifted.sum()
     return prev_weights.copy()
@@ -307,8 +307,9 @@ def walk_forward_backtest(
             opt_kwargs['prev_weights'] = opt_prev
             opt_kwargs['max_turnover'] = max_turnover
 
+        objective_used = "equal_weight"
         try:
-            weights = optimize_portfolio(
+            weights, objective_used = optimize_portfolio(
                 exp_returns_annual, cov_matrix,
                 **opt_kwargs,
             )
@@ -318,6 +319,7 @@ def walk_forward_backtest(
                 f"Falling back to equal weight."
             )
             weights = np.ones(n) / n
+            objective_used = "equal_weight"
 
         weights = _apply_min_weight_threshold(
             weights, min_weight_threshold, period_max_weight,
@@ -329,6 +331,7 @@ def walk_forward_backtest(
             'date': train_end,
             'weights': weight_dict,
             'period_tickers': period_tickers,
+            'objective_used': objective_used,
         }
         if factor_exposures is not None:
             wh_entry['factor_exposures'] = factor_exposures
@@ -673,23 +676,25 @@ def _midpoint_top_holdings(weight_history: list, n: int = 3) -> list[tuple[str, 
 
 
 def _print_robustness_table(table_rows: list[dict], aggregates: dict):
-    print("\n" + "=" * 92)
+    print("\n" + "=" * 100)
     print("ROBUSTNESS ACROSS PERIODS")
-    print("=" * 92)
+    print("=" * 100)
     print(
-        f"{'Period':<12} {'Objective':<9} {'Sharpe':>7} {'AnnRet':>8} {'MaxDD':>8} "
+        f"{'Period':<12} {'Objective':<9} {'Sharpe':>7} {'DSR':>7} {'AnnRet':>8} {'MaxDD':>8} "
         f"{'Calmar':>7} {'Δ vs SPY 95% CI':>18} {'SPY Sharpe':>11}"
     )
-    print("-" * 92)
+    print("-" * 100)
     for row in table_rows:
         ci = row['paired_ci']
         ci_str = f"[{ci[0]:.2f}, {ci[1]:.2f}]" if ci[0] is not None else "—"
+        dsr = row.get('dsr')
+        dsr_str = f"{dsr:.3f}" if dsr is not None and dsr == dsr else "—"
         print(
             f"{row['period']:<12} {row['objective']:<9} "
-            f"{row['sharpe']:>7.2f} {row['ann_ret']:>7.1%} {row['max_dd']:>7.1%} "
+            f"{row['sharpe']:>7.2f} {dsr_str:>7} {row['ann_ret']:>7.1%} {row['max_dd']:>7.1%} "
             f"{row['calmar']:>7.2f} {ci_str:>18} {row['spy_sharpe']:>11.2f}"
         )
-    print("-" * 92)
+    print("-" * 100)
     for obj in ('sharpe', 'cvar'):
         agg = aggregates[obj]
         print(
@@ -697,7 +702,7 @@ def _print_robustness_table(table_rows: list[dict], aggregates: dict):
             f"mean={agg['mean']:.2f}  std={agg['std']:.2f}  min={agg['min']:.2f}  "
             f"n_periods_positive={agg['n_positive']}/3"
         )
-    print("=" * 92)
+    print("=" * 100)
 
 
 TEST_PERIODS = [
@@ -771,6 +776,10 @@ def run_one_period(
         **boot_kw,
     )
     spy_metrics = compute_metrics(spy_returns, rf_daily, **boot_kw)
+
+    dsr, sr_star = deflated_sharpe(portfolio_returns, period_config["n_trials"])
+    metrics["dsr"] = dsr
+    metrics["sr_star"] = sr_star
 
     paired_ci = (
         metrics.get('sharpe_diff_ci_lower'),
@@ -878,6 +887,7 @@ def main():
                     'period': period_label,
                     'objective': objective.capitalize(),
                     'sharpe': m['sharpe'],
+                    'dsr': m.get('dsr'),
                     'ann_ret': m['annual_return'],
                     'max_dd': m['max_drawdown'],
                     'calmar': m['calmar'],
@@ -895,6 +905,7 @@ def main():
                 oos_s = result['portfolio_returns'].index[0].date()
                 oos_e = result['portfolio_returns'].index[-1].date()
                 print(f"     ✓ OOS {oos_s} → {oos_e} | Sharpe={m['sharpe']:.3f} | "
+                      f"DSR={m.get('dsr', float('nan')):.3f} | "
                       f"AnnRet={m['annual_return']:.1%}")
             except Exception as e:
                 msg = f"{tag}: {e}"

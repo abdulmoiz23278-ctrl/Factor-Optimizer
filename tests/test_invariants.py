@@ -1,16 +1,15 @@
-"""Post-backtest invariants loaded from tests/_backtest_state.pkl (written by main.py)."""
+"""Post-backtest invariants loaded from tests/_robustness_state.pkl (written by main.py)."""
 
 import pickle
 from pathlib import Path
 
-import numpy as np
 import pytest
 
-STATE_PATH = Path(__file__).resolve().parent / "_backtest_state.pkl"
+STATE_PATH = Path(__file__).resolve().parent / "_robustness_state.pkl"
 
 
 @pytest.fixture(scope="module")
-def backtest_state():
+def robustness_state():
     if not STATE_PATH.exists():
         pytest.skip(
             f"Missing {STATE_PATH}; run `python main.py` from repo root first."
@@ -20,13 +19,36 @@ def backtest_state():
 
 
 @pytest.fixture(scope="module")
-def weight_history(backtest_state):
-    return backtest_state["weight_history"]
+def config(robustness_state):
+    return robustness_state["config"]
+
+
+def _iter_weight_histories(robustness_state):
+    """Yield weight_history entries from all successful period runs."""
+    for period_data in robustness_state["periods"].values():
+        for objective in ("sharpe", "cvar"):
+            run = period_data.get(objective, {})
+            if run.get("failed") or "weight_history" not in run:
+                continue
+            yield from run["weight_history"]
 
 
 @pytest.fixture(scope="module")
-def config(backtest_state):
-    return backtest_state["config"]
+def weight_history(robustness_state):
+    histories = list(_iter_weight_histories(robustness_state))
+    if not histories:
+        pytest.skip("No weight_history in robustness state.")
+    return histories
+
+
+@pytest.fixture(scope="module")
+def single_run_weight_history(robustness_state):
+    """One full walk-forward run for first-vs-last rebalance checks."""
+    for label in ("2020-2024", "2015-2019", "2010-2014"):
+        run = robustness_state["periods"].get(label, {}).get("sharpe", {})
+        if not run.get("failed") and run.get("weight_history"):
+            return run["weight_history"]
+    pytest.skip("No sharpe weight_history in robustness state.")
 
 
 def test_max_weight_respected(weight_history, config):
@@ -60,10 +82,11 @@ def test_weights_sum_to_one(weight_history):
         )
 
 
-def test_universe_changes_over_time(weight_history):
+def test_universe_changes_over_time(single_run_weight_history):
     """Holdings should change across rebalances (selected 50-name subset)."""
-    first_tickers = set(weight_history[0]["weights"].keys())
-    last_tickers = set(weight_history[-1]["weights"].keys())
+    wh = single_run_weight_history
+    first_tickers = set(wh[0]["weights"].keys())
+    last_tickers = set(wh[-1]["weights"].keys())
     diff = first_tickers.symmetric_difference(last_tickers)
     assert len(diff) > 0, (
         "Universe identical at first and last rebalance — survivorship bias still present"
