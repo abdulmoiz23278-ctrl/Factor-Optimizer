@@ -9,18 +9,29 @@ Walk-forward multi-factor portfolio optimizer validated across three independent
 
 ## Headline result
 
-Three non-overlapping five-year OOS windows, independent training data. Sharpe-maximizing objective:
+Three non-overlapping five-year OOS windows, independent training data. Both Sharpe-maximizing and CVaR objectives run per window:
 
-| Period | Strategy Sharpe | SPY Sharpe | Strategy Return | SPY Return | Strategy Max DD |
-|---|---|---|---|---|---|
-| 2010–2014 | **1.31** | 0.98 | 15.2% | 13.4% | -12.0% |
-| 2015–2019 | **0.93** | 0.81 | 11.8% | 11.5% | -15.3% |
-| 2020–2024 | 0.27 | 0.64 | 6.0% | 13.7% | -36.9% |
-| **Aggregate** | mean 0.84, σ 0.43 | — | — | — | — |
+| Period | Objective | Sharpe | DSR | Annual Return | Max DD | Calmar | Δ Sharpe vs SPY (95% CI) | SPY Sharpe |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2010–2014 | Sharpe | 1.32 | 0.890 | 19.0% | -17.2% | 1.11 | [-0.05, 0.80] | 0.98 |
+| 2010–2014 | CVaR | 1.45 | 0.934 | 19.7% | -14.4% | 1.37 | [0.03, 0.91] | 0.98 |
+| 2015–2019 | Sharpe | 0.94 | 0.718 | 13.1% | -10.9% | 1.20 | [-0.51, 0.67] | 0.81 |
+| 2015–2019 | CVaR | 0.85 | 0.650 | 10.9% | -12.3% | 0.89 | [-0.57, 0.58] | 0.81 |
+| 2020–2024 | Sharpe | 0.16 | 0.144 | 3.5% | -38.6% | 0.09 | [-0.98, -0.02] | 0.64 |
+| 2020–2024 | CVaR | 0.42 | 0.316 | 9.1% | -33.3% | 0.27 | [-0.77, 0.31] | 0.64 |
 
-Paired block-bootstrap 95% CIs for Sharpe difference vs SPY contain zero in every period. The 2020–2024 underperformance is consistent with weakening of the low-volatility factor in a regime where index returns concentrated in mega-cap growth (Blitz & van Vliet, 2023). Cross-period Sharpe standard deviation of 0.43 quantifies regime sensitivity explicitly. No parameter tuning was performed between periods.
+![Cumulative returns across the three OOS windows](robustness_periods.png)
 
-See `robustness_periods.png` for cumulative return visualization.
+| Objective | Mean Sharpe | Std | Min | Periods Sharpe > 0 |
+| --- | --- | --- | --- | --- |
+| Sharpe | 0.81 | 0.48 | 0.16 | 3/3 |
+| CVaR | 0.91 | 0.42 | 0.42 | 3/3 |
+
+The CVaR objective is the stronger of the two on average (mean Sharpe 0.91 vs 0.81) and is the only configuration with a statistically significant Sharpe edge over SPY in any window: in 2010–2014 the paired block-bootstrap CI for its Sharpe difference vs SPY is [0.03, 0.91], which excludes zero. That edge does not persist — the CVaR difference CI includes zero in both 2015–2019 and 2020–2024 — so it should be read as regime-dependent, not as a robust structural advantage.
+
+The Sharpe objective beats SPY on point estimate in 2010–2014 (1.32 vs 0.98) and 2015–2019 (0.94 vs 0.81), but both paired CIs include zero, so those gaps are not statistically significant. In 2020–2024 the Sharpe objective significantly underperforms SPY (0.16 vs 0.64; CI [-0.98, -0.02] excludes zero). CVaR also trails SPY in that window but not significantly (CI [-0.77, 0.31] includes zero).
+
+Deflated Sharpe tracks strategy quality across windows (0.144 to 0.934); the weak 2020–2024 Sharpe run correctly scores 0.144. The 2020–2024 underperformance is consistent with weakening of the low-volatility factor in a regime where index returns concentrated in mega-cap growth (Blitz, van Vliet, & Baltussen, 2019). No parameter tuning was performed between periods.
 
 ---
 
@@ -39,7 +50,7 @@ Rigorous walk-forward portfolio construction with:
 
 ## Methodology
 
-**Universe.** S&P 500 historical constituents, top 50 by training-window liquidity proxy at each quarterly rebalance.
+**Universe.** S&P 500 historical constituents (898 union tickers, 659 with usable price history, 4,529 trading days, 2007–2025), top 50 by data coverage at each quarterly rebalance.
 
 **Expected returns.** Fama-French 5 + Carhart UMD. HAC-robust OLS on rolling 24-month windows. Long-run factor premia from Ken French data. In-sample alpha excluded (does not persist OOS; McLean & Pontiff, 2016).
 
@@ -104,9 +115,10 @@ Runtime ~15–20 minutes (six walk-forward backtests, FF + UMD factor downloads 
 
 1. Fama, E. F., & French, K. R. (2015). A five-factor asset pricing model. *Journal of Financial Economics*, 116(1), 1–22.
 2. Carhart, M. M. (1997). On persistence in mutual fund performance. *Journal of Finance*, 52(1), 57–82.
-3. Rockafellar, R. T., & Uryasev, S. (2000). Optimization of conditional value-at-risk. *Journal of Risk*, 2, 21–42.
-4. Bailey, D. H., & López de Prado, M. (2014). The deflated Sharpe ratio. *Journal of Portfolio Management*, 40(5), 94–107.
-5. Blitz, D., & van Vliet, P. (2023). The volatility effect revisited. *Journal of Portfolio Management*, 50(2).
+3. Rockafellar, R. T., & Uryasev, S. (2000). Optimization of conditional value-at-risk. *Journal of Risk*, 2(3), 21–41.
+4. Bailey, D. H., & López de Prado, M. (2014). The deflated Sharpe ratio: Correcting for selection bias, backtest overfitting, and non-normality. *Journal of Portfolio Management*, 40(5), 94–107.
+5. Blitz, D., van Vliet, P., & Baltussen, G. (2019). The volatility effect revisited. *Journal of Portfolio Management*, 46(2).
+6. McLean, R. D., & Pontiff, J. (2016). Does academic research destroy stock return predictability? *Journal of Finance*, 71(1), 5–32.
 
 ---
 
